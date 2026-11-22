@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
+from mongodb.mongodb_connection import connect_mongodb
 from mongodb.account_operations import (
     get_accounts,
     get_analysis,
@@ -70,13 +71,6 @@ st.markdown(
         margin-bottom: 24px;
     }
 
-    .section-title {
-        color: #111827;
-        font-size: 21px;
-        font-weight: 700;
-        margin-top: 10px;
-    }
-
     div[data-testid="stMetric"] {
         background: white;
         border: 1px solid #e5eaf2;
@@ -93,14 +87,6 @@ st.markdown(
     div[data-testid="stMetricValue"] {
         color: #111827;
         font-weight: 800;
-    }
-
-    .info-card {
-        background: white;
-        border: 1px solid #e5eaf2;
-        border-radius: 12px;
-        padding: 18px;
-        margin-bottom: 12px;
     }
 
     .stButton > button {
@@ -126,21 +112,31 @@ st.markdown(
 # --------------------------------------------------
 
 if "database_loaded" not in st.session_state:
+
     try:
+        # Establish MongoDB connection first
+        db = connect_mongodb()
+
+        # Load existing data
         st.session_state.accounts = get_accounts()
         st.session_state.analysis_history = get_analysis()
+
         st.session_state.database_loaded = True
+
     except Exception as error:
         st.error(f"MongoDB connection failed: {error}")
         st.stop()
 
+
 if "qdrant_ready" not in st.session_state:
+
     try:
         connect_qdrant()
         st.session_state.qdrant_ready = True
+
     except Exception as error:
         st.session_state.qdrant_ready = False
-        st.warning(f"Qdrant is unavailable: {error}")
+        st.warning(f"Qdrant connection failed: {error}")
 
 
 # --------------------------------------------------
@@ -149,12 +145,13 @@ if "qdrant_ready" not in st.session_state:
 
 def refresh_data():
     """Reload account and analysis records from MongoDB."""
+
     st.session_state.accounts = get_accounts()
     st.session_state.analysis_history = get_analysis()
 
 
 def calculate_risk(account):
-    """Calculate a simple rule-based risk score."""
+
     score = 0
     reasons = []
 
@@ -184,9 +181,11 @@ def calculate_risk(account):
     if score >= 70:
         level = "HIGH"
         status = "SUSPICIOUS"
+
     elif score >= 40:
         level = "MEDIUM"
         status = "REVIEW REQUIRED"
+
     else:
         level = "LOW"
         status = "NORMAL"
@@ -198,8 +197,16 @@ def calculate_risk(account):
 
 
 def show_page_header(title, description):
-    st.markdown(f'<div class="main-title">{title}</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="subtitle">{description}</div>', unsafe_allow_html=True)
+
+    st.markdown(
+        f'<div class="main-title">{title}</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        f'<div class="subtitle">{description}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 # --------------------------------------------------
@@ -207,6 +214,7 @@ def show_page_header(title, description):
 # --------------------------------------------------
 
 with st.sidebar:
+
     st.markdown("## 🛡️ AccountGuard")
     st.caption("Social Media Security Intelligence")
     st.divider()
@@ -250,11 +258,6 @@ if page == "Dashboard":
         if item.get("status") == "SUSPICIOUS"
     )
 
-    review_count = sum(
-        1 for item in history
-        if item.get("status") == "REVIEW REQUIRED"
-    )
-
     normal_count = sum(
         1 for item in history
         if item.get("status") == "NORMAL"
@@ -270,10 +273,11 @@ if page == "Dashboard":
     st.markdown("### Recent Detection Results")
 
     if history:
-        recent = history[:10]
+
         display_data = []
 
-        for item in recent:
+        for item in history[:10]:
+
             display_data.append({
                 "Username": item.get("username", "Unknown"),
                 "Risk Score": item.get("risk_score", 0),
@@ -287,6 +291,7 @@ if page == "Dashboard":
             use_container_width=True,
             hide_index=True,
         )
+
     else:
         st.info("No analysis results yet. Go to Analyze Account to start.")
 
@@ -300,6 +305,7 @@ if page == "Dashboard":
 
     with db_col2:
         st.markdown("**Qdrant Cloud**")
+
         if st.session_state.qdrant_ready:
             st.success("Connected")
         else:
@@ -319,11 +325,15 @@ elif page == "Add Account":
 
     with st.form("add_account_form"):
 
-        username = st.text_input("Username", placeholder="example_user")
+        username = st.text_input(
+            "Username",
+            placeholder="example_user",
+        )
 
         col1, col2 = st.columns(2)
 
         with col1:
+
             followers = st.number_input(
                 "Followers",
                 min_value=0,
@@ -337,6 +347,7 @@ elif page == "Add Account":
             )
 
         with col2:
+
             posts_count = st.number_input(
                 "Number of Posts",
                 min_value=0,
@@ -360,9 +371,11 @@ elif page == "Add Account":
     if submitted:
 
         if not username.strip():
+
             st.error("Please enter a username.")
 
         else:
+
             user_id = f"U{int(datetime.now().timestamp() * 1000)}"
 
             account = {
@@ -373,30 +386,46 @@ elif page == "Add Account":
                 "posts_count": int(posts_count),
                 "account_age_days": int(account_age_days),
                 "verified": verified,
-                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "created_at": datetime.now().strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                ),
             }
 
             try:
+
                 saved = add_account(account)
 
                 if not saved:
+
                     st.error("This username already exists.")
+
                 else:
+
                     if st.session_state.qdrant_ready:
+
                         try:
+
                             save_account_vector(account)
-                            st.success("Account saved in MongoDB and Qdrant.")
+
+                            st.success(
+                                "Account saved in MongoDB and Qdrant."
+                            )
+
                         except Exception as error:
+
                             st.warning(
                                 "Account saved in MongoDB, but Qdrant "
                                 f"could not save its vector: {error}"
                             )
+
                     else:
+
                         st.success("Account saved in MongoDB.")
 
                     refresh_data()
 
             except Exception as error:
+
                 st.error(f"Could not save account: {error}")
 
 
@@ -416,12 +445,15 @@ elif page == "Manage Accounts":
     accounts = st.session_state.accounts
 
     if not accounts:
+
         st.info("No accounts are available.")
+
     else:
 
         display_accounts = []
 
         for account in accounts:
+
             display_accounts.append({
                 "User ID": account.get("user_id", ""),
                 "Username": account.get("username", ""),
@@ -442,7 +474,7 @@ elif page == "Manage Accounts":
 
         account_options = {
             f"{a.get('username', 'Unknown')} ({a.get('user_id', '')})":
-                a.get("user_id")
+            a.get("user_id")
             for a in accounts
         }
 
@@ -456,19 +488,19 @@ elif page == "Manage Accounts":
             selected_id = account_options[selected]
 
             try:
-                # Delete its Qdrant vector first.
+
                 if st.session_state.qdrant_ready:
                     delete_account_vector(selected_id)
 
-                # Delete account and its analysis records from MongoDB.
                 delete_account(selected_id)
 
                 refresh_data()
 
-                st.success("Account deleted successfully from the databases.")
+                st.success("Account deleted successfully.")
                 st.rerun()
 
             except Exception as error:
+
                 st.error(f"Account deletion failed: {error}")
 
 
@@ -488,12 +520,13 @@ elif page == "Analyze Account":
     accounts = st.session_state.accounts
 
     if not accounts:
+
         st.info("Add an account before starting an analysis.")
+
     else:
 
         account_options = {
-            f"{a.get('username', 'Unknown')} ({a.get('user_id', '')})":
-                a
+            f"{a.get('username', 'Unknown')} ({a.get('user_id', '')})": a
             for a in accounts
         }
 
@@ -511,11 +544,16 @@ elif page == "Analyze Account":
         c1.metric("Followers", selected_account.get("followers", 0))
         c2.metric("Following", selected_account.get("following", 0))
         c3.metric("Posts", selected_account.get("posts_count", 0))
-        c4.metric("Age (Days)", selected_account.get("account_age_days", 0))
+        c4.metric(
+            "Age (Days)",
+            selected_account.get("account_age_days", 0),
+        )
 
         if st.button("Run Risk Analysis", type="primary"):
 
-            score, level, status, reasons = calculate_risk(selected_account)
+            score, level, status, reasons = calculate_risk(
+                selected_account
+            )
 
             result = {
                 "user_id": selected_account.get("user_id"),
@@ -524,10 +562,13 @@ elif page == "Analyze Account":
                 "risk_level": level,
                 "status": status,
                 "reasons": reasons,
-                "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "date": datetime.now().strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                ),
             }
 
             try:
+
                 save_analysis(result)
                 refresh_data()
 
@@ -540,10 +581,15 @@ elif page == "Analyze Account":
                 result_col3.metric("Detection Status", status)
 
                 if status == "SUSPICIOUS":
+
                     st.error("Suspicious account indicators detected.")
+
                 elif status == "REVIEW REQUIRED":
+
                     st.warning("This account requires further review.")
+
                 else:
+
                     st.success("No major risk indicators detected.")
 
                 st.markdown("### Risk Indicators")
@@ -558,44 +604,65 @@ elif page == "Analyze Account":
 
                 # Qdrant similarity search
                 if st.session_state.qdrant_ready:
+
                     try:
+
                         similar_accounts = search_similar_accounts(
                             selected_account,
                             limit=5,
                         )
 
                         st.markdown("### Similar Accounts")
+
                         similar_rows = []
 
                         for point in similar_accounts:
+
                             payload = point.payload or {}
 
-                            if payload.get("user_id") == selected_account.get("user_id"):
+                            if payload.get("user_id") == selected_account.get(
+                                "user_id"
+                            ):
                                 continue
 
                             similar_rows.append({
-                                "Username": payload.get("username", "Unknown"),
+                                "Username": payload.get(
+                                    "username", "Unknown"
+                                ),
                                 "Followers": payload.get("followers", 0),
                                 "Following": payload.get("following", 0),
                                 "Posts": payload.get("posts_count", 0),
-                                "Similarity Score": round(point.score, 4),
+                                "Similarity Score": round(
+                                    point.score, 4
+                                ),
                             })
 
                         if similar_rows:
+
                             st.dataframe(
                                 pd.DataFrame(similar_rows),
                                 use_container_width=True,
                                 hide_index=True,
                             )
+
                         else:
+
                             st.info("No other similar accounts found.")
 
                     except Exception as error:
-                        st.warning(f"Similarity search failed: {error}")
+
+                        st.warning(
+                            f"Similarity search failed: {error}"
+                        )
+
                 else:
-                    st.info("Qdrant is unavailable. Similarity search was skipped.")
+
+                    st.info(
+                        "Qdrant is unavailable. Similarity search was skipped."
+                    )
 
             except Exception as error:
+
                 st.error(f"Analysis could not be saved: {error}")
 
 
@@ -615,20 +682,25 @@ elif page == "Detection History":
     history = st.session_state.analysis_history
 
     if not history:
+
         st.info("No detection history available.")
+
     else:
 
         history_rows = []
 
         for item in history:
+
+            reasons = item.get("reasons", [])
+
             history_rows.append({
                 "Username": item.get("username", "Unknown"),
                 "Risk Score": item.get("risk_score", 0),
                 "Risk Level": item.get("risk_level", "Unknown"),
                 "Status": item.get("status", "Unknown"),
-                "Reasons": ", ".join(item.get("reasons", []))
-                    if isinstance(item.get("reasons", []), list)
-                    else str(item.get("reasons", "")),
+                "Reasons": ", ".join(reasons)
+                if isinstance(reasons, list)
+                else str(reasons),
                 "Date": item.get("date", ""),
             })
 
@@ -651,30 +723,18 @@ elif page == "Detection History":
 
         st.divider()
 
-        if st.button("Clear Detection History", type="secondary"):
+        if st.button("Clear Detection History"):
 
             try:
+
                 clear_analysis()
                 refresh_data()
+
                 st.success("Detection history cleared.")
                 st.rerun()
 
             except Exception as error:
-                st.error(f"Could not clear history: {error}")
 
-def delete_account_vector(user_id):
-    import uuid
-    from qdrant_client.models import PointIdsList
-
-    client = get_qdrant_client()
-
-    point_id = str(
-        uuid.uuid5(uuid.NAMESPACE_DNS, str(user_id))
-    )
-
-    client.delete(
-        collection_name=COLLECTION_NAME,
-        points_selector=PointIdsList(
-            points=[point_id]
-        )
-    )
+                st.error(
+                    f"Could not clear history: {error}"
+                )
