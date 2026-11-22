@@ -6,9 +6,25 @@ import certifi
 from dotenv import load_dotenv
 from pymongo import MongoClient
 
-# Load the main project .env file
+# Load local .env file
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
+
+# Load Streamlit Cloud Secrets when available
+try:
+    import streamlit as st
+
+    if "MONGODB_URI" in st.secrets:
+        os.environ["MONGODB_URI"] = str(st.secrets["MONGODB_URI"])
+
+    if "MONGODB_DATABASE" in st.secrets:
+        os.environ["MONGODB_DATABASE"] = str(
+            st.secrets["MONGODB_DATABASE"]
+        )
+
+except Exception:
+    # Local execution can continue using .env
+    pass
 
 MONGODB_URI = os.getenv("MONGODB_URI")
 DATABASE_NAME = os.getenv("MONGODB_DATABASE", "FakeAccountDB")
@@ -22,7 +38,9 @@ def connect_mongodb():
 
     try:
         if not MONGODB_URI:
-            raise ValueError("MONGODB_URI is missing from .env")
+            raise ValueError(
+                "MONGODB_URI is missing. Configure .env or Streamlit Secrets."
+            )
 
         print("Connecting to MongoDB Atlas...")
 
